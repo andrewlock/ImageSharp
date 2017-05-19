@@ -13,6 +13,7 @@ namespace ImageSharp.Web.Middleware
     using System.Threading.Tasks;
     using ImageSharp.Memory;
     using ImageSharp.Web.Caching;
+    using ImageSharp.Web.Commands;
     using ImageSharp.Web.Helpers;
     using ImageSharp.Web.Processors;
     using ImageSharp.Web.Services;
@@ -47,23 +48,63 @@ namespace ImageSharp.Web.Middleware
         private readonly ILogger logger;
 
         /// <summary>
+        /// The URI parser for parsing commands.
+        /// </summary>
+        private readonly IUriParser uriParser;
+
+        /// <summary>
+        /// The collection of image services.
+        /// </summary>
+        private readonly IList<IImageService> services;
+
+        /// <summary>
+        /// The collection of image processors.
+        /// </summary>
+        private readonly IList<IImageWebProcessor> processors;
+
+        /// <summary>
+        /// The service for caching images.
+        /// </summary>
+        private readonly IImageCache cache;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ImageSharpMiddleware"/> class.
         /// </summary>
         /// <param name="next">The next middleware in the pipeline</param>
         /// <param name="environment">The <see cref="IHostingEnvironment"/> used by this middleware</param>
         /// <param name="options">The configuration options</param>
         /// <param name="loggerFactory">An <see cref="ILoggerFactory"/> instance used to create loggers</param>
-        public ImageSharpMiddleware(RequestDelegate next, IHostingEnvironment environment, IOptions<ImageSharpMiddlewareOptions> options, ILoggerFactory loggerFactory)
+        /// <param name="uriParser">The URI parser for parsing commands</param>
+        /// <param name="services">The collection of image services</param>
+        /// <param name="processors">The collection of image processors</param>
+        /// <param name="cache">The service for caching images</param>
+        public ImageSharpMiddleware(
+            RequestDelegate next,
+            IHostingEnvironment environment,
+            IOptions<ImageSharpMiddlewareOptions> options,
+            ILoggerFactory loggerFactory,
+            IUriParser uriParser,
+            IEnumerable<IImageService> services,
+            IEnumerable<IImageWebProcessor> processors,
+            IImageCache cache)
         {
             Guard.NotNull(next, nameof(next));
             Guard.NotNull(environment, nameof(environment));
             Guard.NotNull(options, nameof(options));
             Guard.NotNull(loggerFactory, nameof(loggerFactory));
+            Guard.NotNull(uriParser, nameof(uriParser));
+            Guard.NotNull(services, nameof(services));
+            Guard.NotNull(processors, nameof(processors));
+            Guard.NotNull(cache, nameof(cache));
 
             this.next = next;
             this.environment = environment;
             this.options = options.Value;
             this.logger = loggerFactory.CreateLogger<ImageSharpMiddleware>();
+            this.uriParser = uriParser;
+            this.services = services.ToList();
+            this.processors = processors.ToList();
+            this.cache = cache;
         }
 
         /// <summary>
@@ -76,7 +117,7 @@ namespace ImageSharp.Web.Middleware
             // TODO: Parse the request path and application path?
             PathString path = context.Request.Path;
             PathString applicationPath = context.Request.PathBase;
-            IDictionary<string, string> commands = this.options.UriParser.ParseUriCommands(context);
+            IDictionary<string, string> commands = this.uriParser.ParseUriCommands(context);
 
             if (!commands.Any())
             {
@@ -96,7 +137,7 @@ namespace ImageSharp.Web.Middleware
             }
 
             // TODO: Check querystring against list of known parameters. Only continue if valid.
-            IImageCache cache = this.options.Cache;
+            IImageCache cache = this.cache;
 
             // TODO: Add event handler to allow augmenting the querystring value.
             string uri = path + QueryString.Create(commands);
@@ -126,7 +167,7 @@ namespace ImageSharp.Web.Middleware
                 outStream = new MemoryStream();
                 using (var image = Image.Load(this.options.Configuration, inStream))
                 {
-                    image.Process(this.logger, this.options.Processors, commands)
+                    image.Process(this.logger, this.processors, commands)
                          .Save(outStream);
                 }
 
@@ -203,12 +244,10 @@ namespace ImageSharp.Web.Middleware
 
         private async Task<IImageService> AssignServiceAsync(HttpContext context, string uri, string applicationPath)
         {
-            IList<IImageService> services = this.options.Services;
-
             // Remove the Application Path from the Request.Path.
             // This allows applications running on localhost as sub applications to work.
             string path = uri.TrimStart(applicationPath.ToCharArray());
-            foreach (IImageService service in services)
+            foreach (IImageService service in this.services)
             {
                 string key = service.Key;
                 if (string.IsNullOrWhiteSpace(key) || !path.StartsWith(key, StringComparison.OrdinalIgnoreCase))
@@ -225,7 +264,7 @@ namespace ImageSharp.Web.Middleware
             // Return the file based service.
             Type physicalType = typeof(PhysicalFileImageService);
 
-            IImageService physicalService = services.FirstOrDefault(s => s.GetType() == physicalType);
+            IImageService physicalService = this.services.FirstOrDefault(s => s.GetType() == physicalType);
             if (physicalService != null)
             {
                 if (await physicalService.IsValidRequestAsync(context, this.logger, path))
@@ -235,7 +274,7 @@ namespace ImageSharp.Web.Middleware
             }
 
             // Return the next unprefixed service.
-            foreach (IImageService service in services.Where(s => string.IsNullOrEmpty(s.Key) && s.GetType() != physicalType))
+            foreach (IImageService service in this.services.Where(s => string.IsNullOrEmpty(s.Key) && s.GetType() != physicalType))
             {
                 if (await service.IsValidRequestAsync(context, this.logger, path))
                 {

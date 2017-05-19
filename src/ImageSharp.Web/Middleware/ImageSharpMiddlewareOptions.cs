@@ -23,26 +23,6 @@ namespace ImageSharp.Web.Middleware
         public Configuration Configuration { get; set; }
 
         /// <summary>
-        /// Gets or sets the uri parser
-        /// </summary>
-        public IUriParser UriParser { get; set; }
-
-        /// <summary>
-        /// Gets or sets the collecion of image services.
-        /// </summary>
-        public IList<IImageService> Services { get; set; } = new List<IImageService>();
-
-        /// <summary>
-        /// Gets or sets the collecion of image processors.
-        /// </summary>
-        public IList<IImageWebProcessor> Processors { get; set; } = new List<IImageWebProcessor>();
-
-        /// <summary>
-        /// Gets or sets the cache.
-        /// </summary>
-        public IImageCache Cache { get; set; }
-
-        /// <summary>
         /// Gets or sets the number of days to store images in the cache.
         /// </summary>
         public int MaxCacheDays { get; set; }

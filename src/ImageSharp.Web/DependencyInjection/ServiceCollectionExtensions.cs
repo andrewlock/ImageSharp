@@ -5,8 +5,14 @@
 
 namespace ImageSharp.Web.DependencyInjection
 {
+    using System;
+    using ImageSharp.Web.Caching;
+    using ImageSharp.Web.Commands;
     using ImageSharp.Web.Middleware;
+    using ImageSharp.Web.Processors;
+    using ImageSharp.Web.Services;
     using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.DependencyInjection.Extensions;
     using Microsoft.Extensions.Options;
 
     /// <summary>
@@ -23,21 +29,34 @@ namespace ImageSharp.Web.DependencyInjection
         {
             Guard.NotNull(services, nameof(services));
 
+            services.TryAddSingleton<IUriParser, QueryCollectionUriParser>();
+            services.TryAddSingleton<IImageCache, PhysicalFileSystemCache>();
+
+            // TODO: Make these optional - with this setup you can easily add additional ones, but not remove these
+            // Need to think about ordering of these default ones too
+            services.TryAddEnumerable(
+                new ServiceDescriptor(typeof(IImageService), typeof(PhysicalFileImageService), ServiceLifetime.Singleton));
+            services.TryAddEnumerable(
+                new ServiceDescriptor(typeof(IImageWebProcessor), typeof(ResizeWebProcessor), ServiceLifetime.Singleton));
+
             return services.AddSingleton<IConfigureOptions<ImageSharpMiddlewareOptions>, ImageSharpConfiguration>();
         }
 
         /// <summary>
-        /// Registers ImageSharp with the configured services
+        /// Registers ImageSharp with the default services
         /// </summary>
         /// <param name="services">The contract for the collection of service descriptors</param>
-        /// <typeparam name="TOptions">The configuration options.</typeparam>
+        /// <param name="setupAction">An <see cref="Action{ImageSharpMiddlewareOptions}"/> to configure the provided <see cref="ImageSharpMiddlewareOptions"/>.</param>
         /// <returns><see cref="IServiceCollection"/></returns>
-        public static IServiceCollection AddImageSharp<TOptions>(this IServiceCollection services)
-            where TOptions : class, IConfigureOptions<ImageSharpMiddlewareOptions>
+        public static IServiceCollection AddImageSharp(this IServiceCollection services, Action<ImageSharpMiddlewareOptions> setupAction)
         {
             Guard.NotNull(services, nameof(services));
+            Guard.NotNull(setupAction, nameof(setupAction));
 
-            return services.AddSingleton<IConfigureOptions<ImageSharpMiddlewareOptions>, TOptions>();
+            services.AddImageSharp();
+            services.Configure(setupAction);
+
+            return services;
         }
     }
 }

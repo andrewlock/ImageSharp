@@ -21,29 +21,11 @@ namespace ImageSharp.Web.DependencyInjection
     /// </summary>
     public class ImageSharpConfiguration : IConfigureOptions<ImageSharpMiddlewareOptions>
     {
-        /// <summary>
-        /// The hosting environment the application is running in.
-        /// </summary>
-        private readonly IHostingEnvironment environment;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ImageSharpConfiguration"/> class.
-        /// </summary>
-        /// <param name="environment">The <see cref="IHostingEnvironment"/> used by this middleware</param>
-        public ImageSharpConfiguration(IHostingEnvironment environment)
-        {
-            this.environment = environment;
-        }
-
         /// <inheritdoc/>
         public void Configure(ImageSharpMiddlewareOptions options)
         {
             options.Configuration = Configuration.Default;
-            options.Cache = new PhysicalFileSystemCache(this.environment);
             options.MaxCacheDays = 365;
-            options.UriParser = new QueryCollectionUriParser();
-            options.Services = new List<IImageService> { new PhysicalFileImageService(this.environment) };
-            options.Processors = new List<IImageWebProcessor> { new ResizeWebProcessor() };
         }
     }
 }
